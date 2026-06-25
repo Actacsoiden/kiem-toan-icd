@@ -1,0 +1,53 @@
+import keyboard
+import pyperclip
+import webbrowser
+import time
+import os
+import pygetwindow as gw
+import pyautogui
+
+print("="*50)
+print("🚀 CẦU NỐI ĐÃ CẬP NHẬT: DÙNG CHUNG 1 TAB DUY NHẤT!")
+print("="*50)
+
+def on_f9_pressed():
+    # 1. Tự động Copy đoạn chữ anh đang bôi đen trên Minh Lộ
+    keyboard.send('ctrl+c')
+    time.sleep(0.1)
+    
+    copied_text = pyperclip.paste().strip().upper()
+    
+    if copied_text and len(copied_text) < 10:
+        print(f"✅ Bắt được mã: {copied_text}")
+        
+        # 2. Ghi mã vào file văn bản để Web đọc ngầm
+        with open("shared_code.txt", "w", encoding="utf-8") as f:
+            f.write(copied_text)
+            
+        # 3. Tìm Tab Chrome có chứa chữ "Cổng Kiểm Toán ICD-10 Pro"
+        windows = gw.getWindowsWithTitle("Cổng Kiểm Toán ICD-10 Pro")
+        if windows:
+            win = windows[0]
+            # Mở lên nếu đang thu nhỏ
+            if win.isMinimized:
+                win.restore()
+            
+            # Đưa lên mặt trước (Vượt rào cản của Windows)
+            try:
+                win.activate()
+            except:
+                pyautogui.press('alt')
+                try:
+                    win.activate()
+                except:
+                    pass
+            
+            # 4. Tự động bấm phím F5 để tải lại Web
+            time.sleep(0.2)
+            pyautogui.press('f5') 
+        else:
+            # Nếu anh lỡ tay tắt mất Trình duyệt, nó mới tự động mở Tab đầu tiên
+            webbrowser.open("http://localhost:8501")
+
+keyboard.add_hotkey('f9', on_f9_pressed)
+keyboard.wait()
