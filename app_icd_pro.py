@@ -15,17 +15,15 @@ SECRET_PASSWORD = "admin"
 # =====================================================================
 st.set_page_config(page_title="Cổng Kiểm Toán ICD-10 Pro", page_icon="🏥", layout="wide")
 
-# --- ĐỌC TÍN HIỆU TỪ CẦU NỐI F9 ---
-code_file = "shared_code.txt"
-if os.path.exists(code_file):
-    with open(code_file, "r", encoding="utf-8") as f:
-        new_code = f.read().strip()
-    if new_code:
-        st.session_state.active_code = new_code
+# --- ĐỌC TÍN HIỆU TỪ INTERNET (CƠ CHẾ URL PARAMETER CHO CLOUD) ---
+if "code" in st.query_params:
+    received_code = str(st.query_params["code"]).strip().upper()
+    if received_code:
+        st.session_state.active_code = received_code
         st.session_state.current_view = "Kiểm toán BHYT"
         if "audit_input" in st.session_state:
-            st.session_state.audit_input = new_code
-        open(code_file, "w").close()
+            st.session_state.audit_input = received_code
+    st.query_params.clear() # Xóa tham số trên thanh địa chỉ để chờ lần gọi tiếp theo
 
 st.markdown("""
     <meta name="google" content="notranslate">
@@ -39,7 +37,8 @@ st.markdown("""
     .alert-purple { background-color: #F3E5F5; border-left: 6px solid #8E24AA; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
     .alert-pink { background-color: #FCE4EC; border-left: 6px solid #E91E63; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
     .alert-blue { background-color: #E3F2FD; border-left: 6px solid #2196F3; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-    .who-guide { background-color: #F5F5F5; padding: 15px; border-radius: 8px; border-left: 6px solid #607D8B; margin-top: 15px; font-size: 0.95em;}
+    .who-guide { background-color: #FAFAFA; border: 1px solid #CFD8DC; padding: 20px; border-radius: 8px; border-left: 8px solid #455A64; margin-top: 20px; font-size: 1em; line-height: 1.6;}
+    .who-guide ul { margin-top: 5px; margin-bottom: 15px; }
     .recommend-box { background-color: #E0F7FA; padding: 15px; border-radius: 8px; border-left: 6px solid #00BCD4; margin-top: 25px; }
     .paywall-box { background-color: #FFF3E0; padding: 30px; border-radius: 12px; border: 2px solid #FF9800; text-align: center; margin-top: 20px;}
     ul.audit-list { margin-top: 10px; margin-bottom: 5px; padding-left: 20px; }
@@ -106,8 +105,47 @@ def get_code_role_and_priority(row):
         return 2, "⚠️ KHÔNG KHUYẾN KHÍCH BỆNH CHÍNH"
     return 1, "🟢 VỪA LÀM CHÍNH, VỪA LÀM PHỤ"
 
+def parse_who_clinical_data(row):
+    html_parts = []
+    if 'BAO GỒM' in row and pd.notna(row['BAO GỒM']) and str(row['BAO GỒM']).strip():
+        html_parts.append(f'<div style="margin-bottom:12px;"><span style="color:#2E7D32; font-size: 1.05em;">🟢 <b>BAO GỒM (Includes):</b></span><br><span style="color:#333; padding-left:5px;">{str(row["BAO GỒM"]).strip()}</span></div>')
+    if 'LOẠI TRỪ' in row and pd.notna(row['LOẠI TRỪ']) and str(row['LOẠI TRỪ']).strip():
+        html_parts.append(f'<div style="margin-bottom:12px;"><span style="color:#C62828; font-size: 1.05em;">🔴 <b>LOẠI TRỪ (Excludes):</b></span><br><span style="color:#333; padding-left:5px;">{str(row["LOẠI TRỪ"]).strip()}</span></div>')
+    if 'GHI CHÚ' in row and pd.notna(row['GHI CHÚ']) and str(row['GHI CHÚ']).strip():
+        html_parts.append(f'<div style="margin-bottom:12px;"><span style="color:#0277BD; font-size: 1.05em;">📝 <b>GHI CHÚ LÂM SÀNG:</b></span><br><span style="color:#333; padding-left:5px;">{str(row["GHI CHÚ"]).strip()}</span></div>')
+
+    if 'HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019' in row and pd.notna(row['HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019']):
+        t = str(row['HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019']).strip()
+        if t:
+            t = t.replace("\n", "<br>")
+            if not re.search(r'(?i)(Bao gồm|Loại trừ|Ghi chú|Lưu ý|Mã hóa kép)', t):
+                if not html_parts:
+                    html_parts.append(f'<div style="margin-bottom:12px;"><span style="color:#2E7D32; font-size: 1.05em;">🟢 <b>ĐỊNH NGHĨA / BAO GỒM LÂM SÀNG:</b></span><br><span style="color:#333; padding-left:5px;">{t}</span></div>')
+            else:
+                t = re.sub(r'(?i)(Bao gồm:?)', r'<div style="margin-top:10px; margin-bottom:4px;"><span style="color:#2E7D32; font-size: 1.05em;">🟢 <b>BAO GỒM (Includes):</b></span></div>', t)
+                t = re.sub(r'(?i)(-?\s*Loại trừ:?)', r'<div style="margin-top:10px; margin-bottom:4px;"><span style="color:#C62828; font-size: 1.05em;">🔴 <b>LOẠI TRỪ (Excludes):</b></span></div>', t)
+                t = re.sub(r'(?i)(Ghi chú:?)', r'<div style="margin-top:10px; margin-bottom:4px;"><span style="color:#0277BD; font-size: 1.05em;">📝 <b>GHI CHÚ LÂM SÀNG:</b></span></div>', t)
+                t = re.sub(r'(?i)(Lưu ý:?)', r'<div style="margin-top:10px; margin-bottom:4px;"><span style="color:#E65100; font-size: 1.05em;">📌 <b>LƯU Ý QUAN TRỌNG:</b></span></div>', t)
+                t = re.sub(r'(?i)(Sử dụng mã bổ sung|Dùng thêm mã|Mã hóa kép|Mã hóa thêm:?)', r'<div style="margin-top:10px; margin-bottom:4px;"><span style="color:#6A1B9A; font-size: 1.05em;">➕ <b>QUY TẮC MÃ HÓA KÉP:</b></span></div>', t)
+                html_parts.append(f'<div style="color:#333; line-height:1.6;">{t}</div>')
+    return "".join(html_parts) if html_parts else "<i>(Không có chỉ dẫn lâm sàng đặc thù)</i>"
+
+def format_search_who_table(row):
+    parts = []
+    if 'BAO GỒM' in row and pd.notna(row['BAO GỒM']): parts.append(f"🟢 Bao gồm: {row['BAO GỒM']}")
+    if 'LOẠI TRỪ' in row and pd.notna(row['LOẠI TRỪ']): parts.append(f"🔴 Loại trừ: {row['LOẠI TRỪ']}")
+    if 'HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019' in row and pd.notna(row['HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019']):
+        t = str(row['HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019']).strip()
+        if not re.search(r'(?i)(Bao|Loại)', t) and not parts:
+            parts.append(f"🟢 Định nghĩa: {t}")
+        else:
+            t = re.sub(r'(?i)(Bao gồm:?)', '🟢 Bao gồm: ', t)
+            t = re.sub(r'(?i)(-?\s*Loại trừ:?)', '🔴 Loại trừ: ', t)
+            parts.append(t)
+    return " | ".join(parts)
+
 # =====================================================================
-# 3. QUẢN LÝ TỆP DỮ LIỆU BÊN TRÁI
+# 3. QUẢN LÝ TỆP DỮ LIỆU
 # =====================================================================
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/medical-doctor.png", width=80)
@@ -190,10 +228,6 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                 st.markdown(f"""
                 <div class="info-card">
                     <h2 style='color:#1A73E8; margin:0;'>{record['MÃ BỆNH']} — {record['TÊN BỆNH']}</h2>
-                    <hr style='margin: 10px 0;'>
-                    <b>Nhóm:</b> {record['MÃ NHÓM BỆNH 3 KÝ TỰ']} - {record['TÊN NHÓM BỆNH 3 KÝ TỰ']}<br>
-                    <b>Thuộc Khối:</b> {record.get('MÃ KHỐI', 'N/A')} - {record.get('TÊN KHỐI', 'N/A')}<br>
-                    <b>Thuộc Chương:</b> {record['STT CHƯƠNG']} - {record['TÊN CHƯƠNG']}
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -207,7 +241,7 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                     <div class="alert-red">
                         <h4 style="margin:0;">🛑 TỪ CHỐI THANH TOÁN: MÃ VĨ MÔ CHƯA ĐỦ CHI TIẾT</h4>
                         <ul class="audit-list">
-                            <li><b>Lý do:</b> Vi phạm Cột 26. Hệ thống yêu cầu mức độ chi tiết cao hơn.</li>
+                            <li><b>Lý do:</b> Vi phạm Cột 26. Phụ lục TT06 yêu cầu mức độ chi tiết cao hơn.</li>
                             <li><b>Hướng giải quyết:</b> Hãy chọn một trong các mã con hợp lệ dưới đây <i>(Ưu tiên làm Bệnh chính xếp trên cùng)</i>.</li>
                         </ul>
                     </div>
@@ -223,13 +257,13 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                     has_error = False
                     if pd.notna(record.get('CHỈ SỬ DỤNG MÃ HÓA NGUYÊN NHÂN TỬ VONG')):
                         has_error = True
-                        st.markdown("""<div class="alert-purple"><h4 style="margin:0;">⚰️ CHỈ SỬ DỤNG CHO TỬ VONG (Cột 27)</h4></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-purple"><h4 style="margin:0;">⚰️ CHỈ SỬ DỤNG CHO TỬ VONG (Cột 27)</h4><ul class="audit-list"><li>Mã này là nguyên nhân gây chết, tuyệt đối <b>KHÔNG</b> dùng làm chẩn đoán bệnh án.</li></ul></div>""", unsafe_allow_html=True)
                     if pd.notna(record.get('MÃ KHÔNG ĐƯỢC DÙNG LÀ BỆNH CHÍNH')):
                         has_error = True
-                        st.markdown("""<div class="alert-red"><h4 style="margin:0;">🛑 CẤM LÀM BỆNH CHÍNH (Cột 24)</h4><ul class="audit-list"><li>Chỉ được đặt mã này ở ô <b>[Bệnh kèm theo]</b>.</li></ul></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-red"><h4 style="margin:0;">🛑 CẤM LÀM BỆNH CHÍNH (Cột 24)</h4><ul class="audit-list"><li>Chỉ được phép đặt mã này ở ô <b>[Bệnh kèm theo]</b>.</li></ul></div>""", unsafe_allow_html=True)
                     if pd.notna(record.get('MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH')):
                         has_error = True
-                        st.markdown("""<div class="alert-yellow"><h4 style="margin:0;">⚠️ KHÔNG KHUYẾN KHÍCH LÀM BỆNH CHÍNH (Cột 25)</h4></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-yellow"><h4 style="margin:0;">⚠️ KHÔNG KHUYẾN KHÍCH LÀM BỆNH CHÍNH (Cột 25)</h4><ul class="audit-list"><li>BHXH sẽ xuất toán nếu không có giải trình chuyên môn cực kỳ hợp lý.</li></ul></div>""", unsafe_allow_html=True)
                     if pd.notna(record.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NỮ GIỚI')):
                         has_error = True
                         st.markdown("""<div class="alert-pink"><h4 style="margin:0;">♀️ MÃ BỆNH LÝ NỮ GIỚI (Cột 28)</h4></div>""", unsafe_allow_html=True)
@@ -238,24 +272,29 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                         st.markdown("""<div class="alert-blue"><h4 style="margin:0;">♂️ MÃ BỆNH LÝ NAM GIỚI (Cột 29)</h4></div>""", unsafe_allow_html=True)
                     
                     if not has_error:
-                        st.markdown("""<div class="alert-green"><h4 style="margin:0;">🟢 ĐẠT CHUẨN TOÀN VẸN</h4><ul class="audit-list"><li>Được phép dùng tự do cho cả ô <b>Bệnh chính</b> hoặc <b>Bệnh kèm theo</b>.</li></ul></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-green"><h4 style="margin:0;">🟢 ĐẠT CHUẨN TOÀN VẸN (TT 06/2026/TT-BYT)</h4><ul class="audit-list"><li>Được phép dùng tự do cho cả ô <b>Bệnh chính</b> hoặc <b>Bệnh kèm theo</b>.</li></ul></div>""", unsafe_allow_html=True)
 
-                who_guide = record.get('HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019', None)
-                if pd.notna(who_guide):
-                    st.markdown(f"""
-                    <div class="who-guide">
-                        <b>📖 CHỈ DẪN LÂM SÀNG TỪ WHO TẠI MÃ NÀY:</b><br>
-                        {str(who_guide).replace("Bao gồm:", "<br>🟢 <b>Bao gồm:</b>").replace("- Loại trừ:", "<br>🔴 <b>Loại trừ:</b>")}
+                parsed_who_text = parse_who_clinical_data(record)
+                st.markdown(f"""
+                <div class="who-guide">
+                    <h3 style="margin-top:0; color: #263238;">📚 CHỈ DẪN LÂM SÀNG & ĐỊNH VỊ PHÁP LÝ</h3>
+                    <hr style="border-top: 1px solid #CFD8DC; margin: 10px 0;">
+                    <b style="color:#1565C0;">1. Định vị Giải phẫu theo Phụ lục TT06:</b>
+                    <ul>
+                        <li><b>Chương {record.get('STT CHƯƠNG','')}</b>: {record.get('TÊN CHƯƠNG','')}</li>
+                        <li><b>Khối {record.get('MÃ KHỐI','')}</b>: {record.get('TÊN KHỐI','')}</li>
+                        <li><b>Nhóm {record.get('MÃ NHÓM BỆNH 3 KÝ TỰ','')}</b>: {record.get('TÊN NHÓM BỆNH 3 KÝ TỰ','')}</li>
+                    </ul>
+                    <b style="color:#1565C0;">2. Diễn giải chuẩn mực Mã hóa từ WHO 2019:</b><br>
+                    <div style="padding-left: 20px; margin-top: 5px; border-left: 3px solid #90A4AE; background-color: #FFFFFF; padding: 10px; border-radius: 0 5px 5px 0;">
+                        {parsed_who_text}
                     </div>
-                    """, unsafe_allow_html=True)
+                </div>
+                """, unsafe_allow_html=True)
 
-                # =========================================================
-                # THUẬT TOÁN GỢI Ý ĐỊNH VỊ GIẢI PHẪU KÈM CHỈ DẪN WHO
-                # =========================================================
                 current_block = record.get('MÃ KHỐI')
                 current_group = record.get('NHÓM_KEY')
                 current_code = search_code 
-                
                 related_df = pd.DataFrame()
                 
                 if is_macro_locked:
@@ -284,18 +323,8 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                     
                     suggested_df[['Mức Ưu Tiên', 'QUYỀN HẠN SỬ DỤNG']] = suggested_df.apply(lambda r: pd.Series(get_code_role_and_priority(r)), axis=1)
                     suggested_df = suggested_df.sort_values(by=['Mức Ưu Tiên', 'MÃ_KEY'])
-                    
-                    # Thêm Cột Hướng dẫn Lâm sàng WHO vào Bảng Gợi ý
-                    if 'HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019' in suggested_df.columns:
-                        def format_who_guide(text):
-                            if pd.isna(text): return ""
-                            return str(text).replace("Bao gồm:", "🟢 Bao gồm:").replace("- Loại trừ:", "🔴 Loại trừ:")
-                        
-                        suggested_df['Chỉ dẫn Lâm sàng (WHO)'] = suggested_df['HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019'].apply(format_who_guide)
-                        display_related = suggested_df[['MÃ BỆNH', 'QUYỀN HẠN SỬ DỤNG', 'TÊN BỆNH', 'Chỉ dẫn Lâm sàng (WHO)']].rename(columns={'TÊN BỆNH': 'Tên bệnh lý'})
-                    else:
-                        display_related = suggested_df[['MÃ BỆNH', 'QUYỀN HẠN SỬ DỤNG', 'TÊN BỆNH']].rename(columns={'TÊN BỆNH': 'Tên bệnh lý'})
-                        
+                    suggested_df['Chỉ dẫn lâm sàng (WHO)'] = suggested_df.apply(format_search_who_table, axis=1)
+                    display_related = suggested_df[['MÃ BỆNH', 'QUYỀN HẠN SỬ DỤNG', 'TÊN BỆNH', 'Chỉ dẫn lâm sàng (WHO)']].rename(columns={'TÊN BỆNH': 'Tên bệnh lý'})
                     st.dataframe(display_related, use_container_width=True, hide_index=True)
 
 # =====================================================================
@@ -313,48 +342,28 @@ elif st.session_state.current_view == "Từ điển Tìm kiếm":
         if result_df.empty:
             st.warning("Không tìm thấy thuật ngữ phù hợp.")
         else:
-            # --- MÀNG LỌC TUYỆT ĐỐI: CHỈ LẤY CÁC MÃ ĐẠT CHUẨN ---
-            # 1. Loại bỏ Mã Vĩ mô (Cột 26)
             valid_mask = result_df['MÃ KHÔNG ĐƯỢC SỬ DỤNG VÌ CÓ MÃ 4 HOẶC 5 KÝ TỰ CỤ THỂ HƠN'].isna()
-            
-            # 2. Loại bỏ Mã Tử vong (Cột 27)
             if 'CHỈ SỬ DỤNG MÃ HÓA NGUYÊN NHÂN TỬ VONG' in result_df.columns:
                 valid_mask &= result_df['CHỈ SỬ DỤNG MÃ HÓA NGUYÊN NHÂN TỬ VONG'].isna()
-                
-            # 3. Loại bỏ Mã Cấm Bệnh Chính (Cột 24)
             if 'MÃ KHÔNG ĐƯỢC DÙNG LÀ BỆNH CHÍNH' in result_df.columns:
                 valid_mask &= result_df['MÃ KHÔNG ĐƯỢC DÙNG LÀ BỆNH CHÍNH'].isna()
-                
-            # 4. Loại bỏ Mã Không Khuyến Khích Bệnh Chính (Cột 25)
             if 'MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH' in result_df.columns:
                 valid_mask &= result_df['MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH'].isna()
-            
-            # Áp dụng bộ lọc
             result_df = result_df[valid_mask]
 
             if result_df.empty:
-                st.warning("⚠️ Không có mã 'Hợp lệ toàn vẹn' nào khớp với từ khóa của bạn (Các mã tìm được đều vi phạm luật xuất toán hoặc là mã vĩ mô). Vui lòng gõ từ khóa chi tiết hơn.")
+                st.warning("⚠️ Không có mã 'Hợp lệ toàn vẹn' nào khớp với từ khóa của bạn. Vui lòng gõ từ khóa chi tiết hơn.")
             else:
                 st.success(f"🔍 Đã lọc thành công. Dưới đây là **{len(result_df)}** mã hoàn toàn hợp lệ để sử dụng làm bệnh án:")
-                
                 def get_status(row):
-                    # Chỉ còn lại Hợp lệ toàn vẹn và Hợp lệ theo Giới tính
                     flags = []
                     if pd.notna(row.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NỮ GIỚI')): flags.append("♀️ Bệnh Nữ (Hợp lệ nếu đúng giới tính)")
                     if pd.notna(row.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NAM GIỚI')): flags.append("♂️ Bệnh Nam (Hợp lệ nếu đúng giới tính)")
                     return " + ".join(flags) if flags else "🟢 Hợp Lệ Toàn Vẹn"
                     
                 result_df['TRẠNG THÁI KIỂM TOÁN'] = result_df.apply(get_status, axis=1)
-                
-                # Hiển thị thêm Chỉ dẫn WHO nếu có để bác sĩ dễ chọn
-                if 'HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019' in result_df.columns:
-                    def format_search_who(text):
-                        if pd.isna(text): return ""
-                        return str(text).replace("Bao gồm:", "🟢 Bao gồm:").replace("- Loại trừ:", "🔴 Loại trừ:")
-                    result_df['Chỉ dẫn (WHO)'] = result_df['HƯỚNG DẪN MÃ HÓA BỔ SUNG CỦA WHO 2019'].apply(format_search_who)
-                    st.dataframe(result_df[['MÃ BỆNH', 'TRẠNG THÁI KIỂM TOÁN', 'TÊN BỆNH', 'Chỉ dẫn (WHO)']], use_container_width=True, hide_index=True)
-                else:
-                    st.dataframe(result_df[['MÃ BỆNH', 'TRẠNG THÁI KIỂM TOÁN', 'TÊN BỆNH']], use_container_width=True, hide_index=True)
+                result_df['Chỉ dẫn lâm sàng (WHO)'] = result_df.apply(format_search_who_table, axis=1)
+                st.dataframe(result_df[['MÃ BỆNH', 'TRẠNG THÁI KIỂM TOÁN', 'TÊN BỆNH', 'Chỉ dẫn lâm sàng (WHO)']], use_container_width=True, hide_index=True)
                 
                 col_sel, col_btn = st.columns([3, 1])
                 with col_sel:

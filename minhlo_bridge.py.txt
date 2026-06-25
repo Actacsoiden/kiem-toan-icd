@@ -47,7 +47,7 @@ def on_f9_pressed():
             pyautogui.press('f5') 
         else:
             # Nếu anh lỡ tay tắt mất Trình duyệt, nó mới tự động mở Tab đầu tiên
-            webbrowser.open("http://localhost:8501")
+            webbrowser.open("http://icd-vinhbao.streamlit.app")
 
 keyboard.add_hotkey('f9', on_f9_pressed)
 keyboard.wait()
