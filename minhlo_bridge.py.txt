@@ -26,7 +26,7 @@ print("="*60)
 # =====================================================================
 # ⚠️ ĐIỀN CHÍNH XÁC ĐƯỜNG LINK TRANG WEB STREAMLIT CLOUD CỦA ANH VÀO ĐÂY:
 # =====================================================================
-CLOUD_URL = "https://kiem-toan-icd.streamlit.app" 
+CLOUD_URL = "https://kiem-toan-icd-ksvdphzyqjrms5tm5yhnq6.streamlit.app/" 
 
 last_run_time = 0
 cooldown_duration = 2.0
