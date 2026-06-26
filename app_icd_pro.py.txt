@@ -25,7 +25,6 @@ if 'is_unlocked' not in st.session_state: st.session_state.is_unlocked = False
 if "code" in st.query_params:
     received_code = str(st.query_params["code"]).strip().upper()
     if received_code:
-        # Ép trực tiếp vào bộ nhớ widget để hiển thị lên màn hình ngay lập tức
         st.session_state.audit_input = received_code
         st.session_state.active_code = received_code
         st.session_state.current_view = "Kiểm toán BHYT"
@@ -54,11 +53,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-if 'current_view' not in st.session_state: st.session_state.current_view = "Kiểm toán BHYT"
-if 'active_code' not in st.session_state: st.session_state.active_code = ""
-if 'audited_codes' not in st.session_state: st.session_state.audited_codes = set()
-if 'is_unlocked' not in st.session_state: st.session_state.is_unlocked = False
-
 def navigate_to_audit(code):
     st.session_state.audit_input = code
     st.session_state.active_code = code
@@ -67,7 +61,8 @@ def navigate_to_audit(code):
 def remove_vietnamese_accents(s):
     if pd.isna(s) or not isinstance(s, str): return ""
     s = unicodedata.normalize('NFD', s)
-    return ''.join(c for c in f if unicodedata.category(c) != 'Mn').replace('đ', 'd').replace('Đ', 'D').lower()
+    # ĐÃ SỬA LỖI: Chuyển chính xác từ f thành s
+    return ''.join(c for c in s if unicodedata.category(c) != 'Mn').replace('đ', 'd').replace('Đ', 'D').lower()
 
 def safe_get_str(row, col_name):
     if col_name in row and pd.notna(row[col_name]): return str(row[col_name]).strip()
@@ -153,7 +148,6 @@ with st.sidebar:
 if st.session_state.current_view == "Kiểm toán BHYT":
     st.header("🔍 Thẩm định Pháp lý & Định hướng Bệnh án")
     
-    # KHẮC PHỤC CHÍNH XÁC: Gán trực tiếp qua key kết nối trung tâm để phá vỡ băng giá bộ đệm
     raw_code = st.text_input("Nhập mã ICD-10 cần kiểm toán:", key="audit_input")
     search_code = re.sub(r'[^a-zA-Z0-9.]', '', raw_code).strip().upper()
     st.session_state.active_code = search_code 
@@ -204,6 +198,7 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                     if safe_get_str(record, 'MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH'):
                         has_role_error = True; st.markdown("""<div class="alert-yellow"><h4 style="margin:0;">⚠️ CẢNH BÁO CỘT 25: KHÔNG KHUYẾN KHÍCH LÀM BỆNH CHÍNH</h4></div>""", unsafe_allow_html=True)
                     
+                    # ĐÃ SỬA LỖI: Cột hiển thị bảng chuẩn xác không dính ký tự lạ
                     if not has_role_error: st.markdown("""<div class="alert-green"><h4 style="margin:0;">🟢 QUYỀN HẠN CHẨN ĐOÁN: VỪA LÀM CHÍNH, VỪA LÀM PHỤ</h4></div>""", unsafe_allow_html=True)
                     if safe_get_str(record, 'CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NỮ GIỚI'): st.markdown("""<div class="alert-pink"><h4 style="margin:0;">♀️ ĐIỀU KIỆN GIỚI TÍNH: MÃ BỆNH LÝ CHỈ CÓ Ở NỮ GIỚI (Cột 28)</h4></div>""", unsafe_allow_html=True)
                     if safe_get_str(record, 'CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NAM GIỚI'): st.markdown("""<div class="alert-blue"><h4 style="margin:0;">♂️ ĐIỀU KIỆN GIỚI TÍNH: MÃ BỆNH LÝ CHỈ CÓ Ở NAM GIỚI (Cột 29)</h4></div>""", unsafe_allow_html=True)
@@ -226,10 +221,10 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                         rec_title, rec_desc = f"💡 GỢI Ý CHẨN ĐOÁN PHÂN BIỆT (Khối {current_block})", "Các hệ cơ quan lân cận:"
                 else:
                     related_df = df_master[(df_master['NHÓM_KEY'] == current_group) & (df_master['MÃ_KEY'] != search_code) & leaf_mask].copy()
-                    rec_title, rec_desc = f"💡 GỢI Ý ĐỊNH VỊ GIẢI PHẪU CHI TIẾT (Nhóm {current_group})", "Các tổn thương đặc hiệu khác cùng nhóm cơ quan:"
+                    rec_title, rec_desc = f"💡 GỢI Ý CÙNG NHÓM (Nhóm {current_group})", "Vị trí giải phẫu khác:"
                     if related_df.empty and pd.notna(current_block):
                         related_df = df_master[(df_master['MÃ KHỐI'] == current_block) & (df_master['NHÓM_KEY'] != current_group) & leaf_mask].copy()
-                        rec_title, rec_desc = f"💡 GỢI Ý CHẨN ĐOÁN PHÂN BIỆT (Khối {current_block})", "Các hệ cơ quan lân cận:"
+                        rec_title, rec_desc = f"💡 GỢI Ý CHẨN ĐOÁN PHÂN BIỆT (Khối {current_block})", "Các mã lân cận:"
 
                 if not related_df.empty:
                     suggested_df = related_df.head(15).copy()
