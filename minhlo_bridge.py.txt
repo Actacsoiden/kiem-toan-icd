@@ -1,30 +1,54 @@
+import ctypes
+import sys
+import os
+
+def is_admin():
+    try: return ctypes.windll.shell32.IsUserAnAdmin()
+    except: return False
+
+if not is_admin():
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+    sys.exit()
+
 import keyboard
 import pyperclip
 import webbrowser
 import time
-import os
 import re
 import pygetwindow as gw
 import pyautogui
 
 print("="*60)
-print("🚀 ROBOT F9 LOCAL - CHẠY NỘI BỘ (KHÔNG CẦN INTERNET)")
+print("🚀 ROBOT F9 CLOUD - BẢN ĐÁM MÂY (CHẠY QUA INTERNET)")
 print("="*60)
 
-# Cấu hình đường dẫn nội bộ
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-SHARED_TXT_PATH = os.path.join(CURRENT_DIR, "shared_code.txt")
-LOCAL_URL = "http://localhost:8501"
+# =====================================================================
+# GÕ CHÍNH XÁC ĐƯỜNG LINK TRANG WEB STREAMLIT CỦA ANH VÀO ĐÂY:
+# =====================================================================
+CLOUD_URL = "https://kiem-toan-icd.streamlit.app"
 
 last_run_time = 0
-cooldown_duration = 2.0  # Khóa phím 2 giây chống đẻ tab rác
+cooldown_duration = 2.0
+
+def force_focus(window_title):
+    try:
+        for win in gw.getAllWindows():
+            if window_title.lower() in win.title.lower():
+                hwnd = win._hWnd
+                if ctypes.windll.user32.IsIconic(hwnd):
+                    ctypes.windll.user32.ShowWindow(hwnd, 9) 
+                pyautogui.press('alt')
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                return True
+    except Exception:
+        pass
+    return False
 
 def on_f9_pressed():
     global last_run_time
     current_time = time.time()
     
-    if current_time - last_run_time < cooldown_duration:
-        return
+    if current_time - last_run_time < cooldown_duration: return
     last_run_time = current_time
     
     pyperclip.copy("") 
@@ -34,35 +58,25 @@ def on_f9_pressed():
     raw_text = pyperclip.paste().strip().upper()
     copied_text = re.sub(r'[^A-Z0-9.]', '', raw_text)
     
-    if not copied_text or len(copied_text) > 10:
-        return
+    if not copied_text or len(copied_text) > 10: return
         
-    # Ghi mã vào file text để web nội bộ đọc
-    try:
-        with open(SHARED_TXT_PATH, "w", encoding="utf-8") as f:
-            f.write(copied_text)
-    except Exception:
-        return
+    # Tạo đường link đẩy mã bệnh thẳng lên đám mây
+    full_url = f"{CLOUD_URL}/?code={copied_text}"
 
-    # Tìm trang web đang mở ở localhost và ấn F5
-    target_win = None
-    for win in gw.getAllWindows():
-        if "Kiểm Toán" in win.title or "Streamlit" in win.title or "localhost" in win.title:
-            target_win = win
-            break
-            
-    if target_win:
-        try:
-            if target_win.isMinimized: 
-                target_win.restore()
-            pyautogui.press('alt') 
-            target_win.activate()
-            time.sleep(0.3)
-            pyautogui.press('f5')
-        except Exception:
-            webbrowser.open(LOCAL_URL)
+    # Thuật toán thông minh dán đè URL lên thanh địa chỉ (Chống bung nhiều tab rác)
+    if force_focus("Kiểm Toán") or force_focus("Streamlit"):
+        time.sleep(0.2)
+        pyautogui.hotkey('ctrl', 'l') 
+        time.sleep(0.1)
+        pyperclip.copy(full_url)
+        time.sleep(0.1)
+        pyautogui.hotkey('ctrl', 'v')
+        time.sleep(0.1)
+        pyautogui.press('enter')
+        print(f"🔄 Đã truyền mã lên Đám mây: {copied_text}")
     else:
-        webbrowser.open(LOCAL_URL)
+        webbrowser.open(full_url)
+        print("🌐 Mở liên kết Đám mây mới!")
 
 keyboard.add_hotkey('f9', on_f9_pressed)
 keyboard.wait()
