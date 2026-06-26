@@ -1,0 +1,31 @@
+import keyboard
+import pyperclip
+import webbrowser
+import time
+import pygetwindow as gw
+import pyautogui
+
+def on_f9_pressed():
+    keyboard.send('ctrl+c')
+    time.sleep(0.1)
+    copied_text = pyperclip.paste().strip().upper()
+    
+    if copied_text and len(copied_text) < 10:
+        # Ghi file để web đọc
+        with open("shared_code.txt", "w", encoding="utf-8") as f:
+            f.write(copied_text)
+            
+        # Tìm trình duyệt và F5
+        windows = gw.getWindowsWithTitle("Cổng Kiểm Toán ICD-10 Pro")
+        if windows:
+            win = windows[0]
+            if win.isMinimized: win.restore()
+            win.activate()
+            time.sleep(0.2)
+            pyautogui.press('f5') 
+        else:
+            # Mở trực tiếp link Cloud
+            webbrowser.open("https://icd-vinhbao.streamlit.app")
+
+keyboard.add_hotkey('f9', on_f9_pressed)
+keyboard.wait()

@@ -6,24 +6,23 @@ import re
 import unicodedata
 
 # =====================================================================
-# THIẾT LẬP MẬT KHẨU BẢN QUYỀN
+# THIẾT LẬP MẬT KHẨU BẢO MẬT NỘI BỘ
 # =====================================================================
 SECRET_PASSWORD = "admin" 
 
 # =====================================================================
-# 1. CẤU HÌNH GIAO DIỆN & STATE MANAGEMENT
+# CẤU HÌNH GIAO DIỆN & QUẢN LÝ TRẠNG THÁI CLOUD
 # =====================================================================
 st.set_page_config(page_title="Cổng Kiểm Toán ICD-10 Pro", page_icon="🏥", layout="wide")
 
-# --- ĐỌC TÍN HIỆU TỪ INTERNET (CƠ CHẾ URL PARAMETER CHO CLOUD) ---
-if "code" in st.query_params:
-    received_code = str(st.query_params["code"]).strip().upper()
+# --- CƠ CHẾ ĐỌC MÃ TỰ ĐỘNG QUA THAM SỐ URL TRÊN MÂY ---
+url_params = st.query_params
+received_code = ""
+if "code" in url_params:
+    received_code = str(url_params["code"]).strip().upper()
     if received_code:
         st.session_state.active_code = received_code
         st.session_state.current_view = "Kiểm toán BHYT"
-        if "audit_input" in st.session_state:
-            st.session_state.audit_input = received_code
-    st.query_params.clear() # Xóa tham số trên thanh địa chỉ để chờ lần gọi tiếp theo
 
 st.markdown("""
     <meta name="google" content="notranslate">
@@ -38,7 +37,6 @@ st.markdown("""
     .alert-pink { background-color: #FCE4EC; border-left: 6px solid #E91E63; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
     .alert-blue { background-color: #E3F2FD; border-left: 6px solid #2196F3; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
     .who-guide { background-color: #FAFAFA; border: 1px solid #CFD8DC; padding: 20px; border-radius: 8px; border-left: 8px solid #455A64; margin-top: 20px; font-size: 1em; line-height: 1.6;}
-    .who-guide ul { margin-top: 5px; margin-bottom: 15px; }
     .recommend-box { background-color: #E0F7FA; padding: 15px; border-radius: 8px; border-left: 6px solid #00BCD4; margin-top: 25px; }
     .paywall-box { background-color: #FFF3E0; padding: 30px; border-radius: 12px; border: 2px solid #FF9800; text-align: center; margin-top: 20px;}
     ul.audit-list { margin-top: 10px; margin-bottom: 5px; padding-left: 20px; }
@@ -60,7 +58,7 @@ def navigate_to_audit(code):
     st.session_state.current_view = "Kiểm toán BHYT"
 
 # =====================================================================
-# 2. XỬ LÝ DỮ LIỆU & TIẾNG VIỆT
+# XỬ LÝ DỮ LIỆU CHUYỂN ĐỔI TIẾNG VIỆT
 # =====================================================================
 def remove_vietnamese_accents(s):
     if pd.isna(s) or not isinstance(s, str): return ""
@@ -68,11 +66,10 @@ def remove_vietnamese_accents(s):
     s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
     return s.replace('đ', 'd').replace('Đ', 'D').lower()
 
-@st.cache_data(show_spinner="⚙️ Đang cấu trúc hệ thống dữ liệu Y khoa...")
+@st.cache_data(show_spinner="⚙️ Đang kết cấu dữ liệu y khoa...")
 def init_enterprise_engine(file_source):
     try:
         df_raw = pd.read_excel(file_source, sheet_name="Bảng mã ICD10", header=2, engine='openpyxl', dtype=str)
-        
         if str(df_raw.iloc[0]['MÃ BỆNH']).strip() == '18' or str(df_raw.iloc[0]['STT']).strip() == '1':
             df = df_raw.iloc[1:].reset_index(drop=True)
         else:
@@ -93,7 +90,7 @@ def init_enterprise_engine(file_source):
         exact_map = df.set_index('MÃ_KEY', drop=False).to_dict(orient='index')
         return df, exact_map
     except Exception as e:
-        st.error(f"Lỗi khởi tạo dữ liệu: {e}")
+        st.error(f"Lỗi khởi tạo dữ liệu Excel: {e}")
         return None, None
 
 def get_code_role_and_priority(row):
@@ -145,55 +142,48 @@ def format_search_who_table(row):
     return " | ".join(parts)
 
 # =====================================================================
-# 3. QUẢN LÝ TỆP DỮ LIỆU
+# TẢI DANH MỤC TỪ THƯ MỤC GỐC
 # =====================================================================
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+data_source = os.path.join(CURRENT_DIR, "icd.xlsx")
+
+if not os.path.exists(data_source):
+    st.error("❌ Cảnh báo: Thiếu file danh mục 'icd.xlsx' trên kho lưu trữ đám mây.")
+    st.stop()
+
+df_master, exact_map = init_enterprise_engine(data_source)
+if df_master is None:
+    st.stop()
+
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/000000/medical-doctor.png", width=80)
     st.title("Chuyên gia ICD-10")
-    st.markdown("---")
-    
-    default_filename = "icd.xlsx"
-    absolute_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), default_filename)
-    data_source = absolute_path if os.path.exists(absolute_path) else (default_filename if os.path.exists(default_filename) else None)
-    
-    if not data_source:
-        uploaded_file = st.file_uploader("📂 Kéo thả file 'icd.xlsx' vào đây:", type=["xlsx"])
-        if uploaded_file: data_source = uploaded_file
-
-    if data_source:
-        df_master, exact_map = init_enterprise_engine(data_source)
-        if df_master is not None:
-            st.success(f"✅ Đã tải: **{len(df_master):,}** mã bệnh.")
-        else:
-            st.stop()
-    else:
-        st.stop()
-
+    st.success(f"✅ Hệ thống trực tuyến sẵn sàng: {len(df_master):,} mã.")
     st.markdown("---")
     menu_options = ["Kiểm toán BHYT", "Từ điển Tìm kiếm"]
     st.session_state.current_view = st.radio("📍 **BẢNG ĐIỀU KHIỂN:**", menu_options, index=menu_options.index(st.session_state.current_view))
-    
     st.markdown("---")
     if st.session_state.is_unlocked:
-        st.success("🔓 Phiên bản: PRO (Đã kết nối HIS)")
+        st.success("🔓 CẤP QUYỀN: TOÀN VIỆN THÀNH CÔNG")
     else:
-        st.info(f"🎁 Lượt tra cứu miễn phí: **{len(st.session_state.audited_codes)}/3 mã**")
+        st.info(f"🎁 Lượt dùng thử thiết bị: {len(st.session_state.audited_codes)}/3 mã")
 
 # =====================================================================
-# 4. PHÂN HỆ KIỂM TOÁN LÂM SÀNG & BẢO MẬT
+# PHÂN HỆ KIỂM TOÁN
 # =====================================================================
 if st.session_state.current_view == "Kiểm toán BHYT":
     st.header("🔍 Thẩm định Pháp lý & Định hướng Bệnh án")
     
-    raw_code = st.text_input("Nhập mã ICD-10 (Gõ tay hoặc Ấn F9 từ phần mềm khác):", value=st.session_state.active_code, key="audit_input")
+    # Ưu tiên lấy mã bệnh truyền thẳng từ tham số URL Internet (?code=...)
+    default_input = received_code if received_code else st.session_state.get('active_code', '')
+    raw_code = st.text_input("Nhập mã ICD-10 cần kiểm toán:", value=default_input, key="audit_input")
     search_code = re.sub(r'[^a-zA-Z0-9.]', '', raw_code).strip().upper()
     st.session_state.active_code = search_code 
     
     if search_code:
         record = exact_map.get(search_code)
-        
         if not record:
-            st.error(f"❌ Mã '{search_code}' không hợp lệ hoặc không có trong Danh mục.")
+            st.error(f"❌ Mã '{search_code}' không tồn tại trong danh mục kiểm toán.")
         else:
             show_paywall = False
             if not st.session_state.is_unlocked:
@@ -206,24 +196,21 @@ if st.session_state.current_view == "Kiểm toán BHYT":
             if show_paywall:
                 st.markdown(f"""
                 <div class="paywall-box">
-                    <h2 style="color:#E65100; margin-top:0;">🔒 YÊU CẦU CẤP QUYỀN TRUY CẬP HỆ THỐNG</h2>
-                    <p style="font-size:16px;">Bạn đang tra cứu mã thứ 4 (<b>{search_code}</b>).<br>
-                    Vui lòng nhập Mật khẩu để kích hoạt tính năng tra cứu không giới hạn & Kết nối liên thông HIS.</p>
+                    <h2 style="color:#E65100; margin-top:0;">🔒 HỆ THỐNG KIỂM TOÁN ĐANG BỊ KHÓA</h2>
+                    <p style="font-size:16px;">Vui lòng nhập Mật khẩu bản quyền do Điều dưỡng trưởng cung cấp để tiếp tục sử dụng.</p>
                 </div>
                 """, unsafe_allow_html=True)
-                
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
                     pwd_input = st.text_input("🔑 Nhập Mật Khẩu Bản Quyền:", type="password")
-                    if st.button("Mở Khóa Phần Mềm", use_container_width=True, type="primary"):
+                    if st.button("Mở Khóa Hệ Thống", use_container_width=True, type="primary"):
                         if pwd_input == SECRET_PASSWORD:
                             st.session_state.is_unlocked = True
                             st.session_state.audited_codes.add(search_code)
-                            st.success("🎉 Mở khóa thành công! Hệ thống hoạt động 100%.")
+                            st.success("🎉 Mở khóa thành công toàn cơ quan!")
                             st.rerun()
                         else:
-                            st.error("❌ Sai Mật khẩu! Vui lòng thử lại.")
-            
+                            st.error("❌ Sai mật khẩu bảo mật!")
             else:
                 st.markdown(f"""
                 <div class="info-card">
@@ -234,19 +221,17 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                 leaf_mask = df_master['MÃ KHÔNG ĐƯỢC SỬ DỤNG VÌ CÓ MÃ 4 HOẶC 5 KÝ TỰ CỤ THỂ HƠN'].isna()
                 is_macro_locked = pd.notna(record.get('MÃ KHÔNG ĐƯỢC SỬ DỤNG VÌ CÓ MÃ 4 HOẶC 5 KÝ TỰ CỤ THỂ HƠN'))
                 
-                st.markdown("### ⚖️ Kết quả Giám định & Căn cứ Pháp lý:")
+                st.markdown("### ⚖️ Kết quả Giám định & Căn cứ Pháp lý xuất toán:")
                 
                 if is_macro_locked:
                     st.markdown("""
                     <div class="alert-red">
-                        <h4 style="margin:0;">🛑 TỪ CHỐI THANH TOÁN: MÃ VĨ MÔ CHƯA ĐỦ CHI TIẾT</h4>
+                        <h4 style="margin:0;">🛑 TỪ CHỐI THANH TOÁN: VI PHẠM MÃ VĨ MÔ (CỘT 26)</h4>
                         <ul class="audit-list">
-                            <li><b>Lý do:</b> Vi phạm Cột 26. Phụ lục TT06 yêu cầu mức độ chi tiết cao hơn.</li>
-                            <li><b>Hướng giải quyết:</b> Hãy chọn một trong các mã con hợp lệ dưới đây <i>(Ưu tiên làm Bệnh chính xếp trên cùng)</i>.</li>
+                            <li><b>Lý do:</b> Bắt buộc phải chia chi tiết tới mã con giải phẫu học cụ thể hơn.</li>
                         </ul>
                     </div>
                     """, unsafe_allow_html=True)
-                    
                     sub_codes_df = df_master[(df_master['NHÓM_KEY'] == record['NHÓM_KEY']) & leaf_mask].copy()
                     if not sub_codes_df.empty:
                         sub_codes_df[['Mức Ưu Tiên', 'QUYỀN HẠN SỬ DỤNG']] = sub_codes_df.apply(lambda r: pd.Series(get_code_role_and_priority(r)), axis=1)
@@ -257,35 +242,34 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                     has_error = False
                     if pd.notna(record.get('CHỈ SỬ DỤNG MÃ HÓA NGUYÊN NHÂN TỬ VONG')):
                         has_error = True
-                        st.markdown("""<div class="alert-purple"><h4 style="margin:0;">⚰️ CHỈ SỬ DỤNG CHO TỬ VONG (Cột 27)</h4><ul class="audit-list"><li>Mã này là nguyên nhân gây chết, tuyệt đối <b>KHÔNG</b> dùng làm chẩn đoán bệnh án.</li></ul></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-purple"><h4 style="margin:0;">⚰️ VI PHẠM CỘT 27: CHỈ MÃ HÓA TỬ VONG</h4></div>""", unsafe_allow_html=True)
                     if pd.notna(record.get('MÃ KHÔNG ĐƯỢC DÙNG LÀ BỆNH CHÍNH')):
                         has_error = True
-                        st.markdown("""<div class="alert-red"><h4 style="margin:0;">🛑 CẤM LÀM BỆNH CHÍNH (Cột 24)</h4><ul class="audit-list"><li>Chỉ được phép đặt mã này ở ô <b>[Bệnh kèm theo]</b>.</li></ul></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-red"><h4 style="margin:0;">🛑 VI PHẠM CỘT 24: CẤM ĐẶT LÀM BỆNH CHÍNH</h4></div>""", unsafe_allow_html=True)
                     if pd.notna(record.get('MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH')):
                         has_error = True
-                        st.markdown("""<div class="alert-yellow"><h4 style="margin:0;">⚠️ KHÔNG KHUYẾN KHÍCH LÀM BỆNH CHÍNH (Cột 25)</h4><ul class="audit-list"><li>BHXH sẽ xuất toán nếu không có giải trình chuyên môn cực kỳ hợp lý.</li></ul></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-yellow"><h4 style="margin:0;">⚠️ CẢNH BÁO CỘT 25: KHÔNG KHUYẾN KHÍCH BỆNH CHÍNH</h4></div>""", unsafe_allow_html=True)
                     if pd.notna(record.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NỮ GIỚI')):
                         has_error = True
-                        st.markdown("""<div class="alert-pink"><h4 style="margin:0;">♀️ MÃ BỆNH LÝ NỮ GIỚI (Cột 28)</h4></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-pink"><h4 style="margin:0;">♀️ CẢNH BÁO CỘT 28: ĐẶC THÙ NỮ GIỚI</h4></div>""", unsafe_allow_html=True)
                     if pd.notna(record.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NAM GIỚI')):
                         has_error = True
-                        st.markdown("""<div class="alert-blue"><h4 style="margin:0;">♂️ MÃ BỆNH LÝ NAM GIỚI (Cột 29)</h4></div>""", unsafe_allow_html=True)
-                    
+                        st.markdown("""<div class="alert-blue"><h4 style="margin:0;">♂️ CẢNH BÁO CỘT 29: ĐẶC THÙ NAM GIỚI</h4></div>""", unsafe_allow_html=True)
                     if not has_error:
-                        st.markdown("""<div class="alert-green"><h4 style="margin:0;">🟢 ĐẠT CHUẨN TOÀN VẸN (TT 06/2026/TT-BYT)</h4><ul class="audit-list"><li>Được phép dùng tự do cho cả ô <b>Bệnh chính</b> hoặc <b>Bệnh kèm theo</b>.</li></ul></div>""", unsafe_allow_html=True)
+                        st.markdown("""<div class="alert-green"><h4 style="margin:0;">🟢 ĐẠT CHUẨN TOÀN VẸN PHÁP LÝ CHẨN ĐOÁN</h4></div>""", unsafe_allow_html=True)
 
                 parsed_who_text = parse_who_clinical_data(record)
                 st.markdown(f"""
                 <div class="who-guide">
                     <h3 style="margin-top:0; color: #263238;">📚 CHỈ DẪN LÂM SÀNG & ĐỊNH VỊ PHÁP LÝ</h3>
                     <hr style="border-top: 1px solid #CFD8DC; margin: 10px 0;">
-                    <b style="color:#1565C0;">1. Định vị Giải phẫu theo Phụ lục TT06:</b>
+                    <b style="color:#1565C0;">1. Cấu trúc danh mục theo Phụ lục Thông tư:</b>
                     <ul>
                         <li><b>Chương {record.get('STT CHƯƠNG','')}</b>: {record.get('TÊN CHƯƠNG','')}</li>
                         <li><b>Khối {record.get('MÃ KHỐI','')}</b>: {record.get('TÊN KHỐI','')}</li>
                         <li><b>Nhóm {record.get('MÃ NHÓM BỆNH 3 KÝ TỰ','')}</b>: {record.get('TÊN NHÓM BỆNH 3 KÝ TỰ','')}</li>
                     </ul>
-                    <b style="color:#1565C0;">2. Diễn giải chuẩn mực Mã hóa từ WHO 2019:</b><br>
+                    <b style="color:#1565C0;">2. Chỉ dẫn tra cứu quy chuẩn phân vị từ WHO 2019:</b><br>
                     <div style="padding-left: 20px; margin-top: 5px; border-left: 3px solid #90A4AE; background-color: #FFFFFF; padding: 10px; border-radius: 0 5px 5px 0;">
                         {parsed_who_text}
                     </div>
@@ -294,23 +278,17 @@ if st.session_state.current_view == "Kiểm toán BHYT":
 
                 current_block = record.get('MÃ KHỐI')
                 current_group = record.get('NHÓM_KEY')
-                current_code = search_code 
                 related_df = pd.DataFrame()
                 
                 if is_macro_locked:
                     if pd.notna(current_block):
                         related_df = df_master[(df_master['MÃ KHỐI'] == current_block) & (df_master['NHÓM_KEY'] != current_group) & leaf_mask].copy()
                         rec_title = f"💡 GỢI Ý CHẨN ĐOÁN PHÂN BIỆT (Khối {current_block})"
-                        rec_desc = f"Các mã thuộc hệ <b>{record.get('TÊN KHỐI')}</b> có thể bạn quan tâm:"
+                        rec_desc = f"Các mã thuộc hệ cơ quan lân cận:"
                 else:
-                    related_df = df_master[(df_master['NHÓM_KEY'] == current_group) & (df_master['MÃ_KEY'] != current_code) & leaf_mask].copy()
+                    related_df = df_master[(df_master['NHÓM_KEY'] == current_group) & (df_master['MÃ_KEY'] != search_code) & leaf_mask].copy()
                     rec_title = f"💡 GỢI Ý ĐỊNH VỊ GIẢI PHẪU CHI TIẾT HƠN (Nhóm {current_group})"
-                    rec_desc = f"Bạn đang chọn mã <b>{current_code}</b>. Dưới đây là các vị trí giải phẫu/mức độ cụ thể khác thuộc nhóm <b>{record.get('TÊN NHÓM BỆNH 3 KÝ TỰ')}</b> mà bạn có thể cân nhắc:"
-                    
-                    if related_df.empty and pd.notna(current_block):
-                        related_df = df_master[(df_master['MÃ KHỐI'] == current_block) & (df_master['NHÓM_KEY'] != current_group) & leaf_mask].copy()
-                        rec_title = f"💡 GỢI Ý CHẨN ĐOÁN PHÂN BIỆT (Khối {current_block})"
-                        rec_desc = f"Các mã thuộc hệ <b>{record.get('TÊN KHỐI')}</b> có thể bạn quan tâm:"
+                    rec_desc = f"Các vị trí giải phẫu cụ thể khác cùng nhóm:"
 
                 if not related_df.empty:
                     suggested_df = related_df.head(15).copy()
@@ -320,7 +298,6 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                         <p style="margin-top:5px; margin-bottom:10px;">{rec_desc}</p>
                     </div>
                     """, unsafe_allow_html=True)
-                    
                     suggested_df[['Mức Ưu Tiên', 'QUYỀN HẠN SỬ DỤNG']] = suggested_df.apply(lambda r: pd.Series(get_code_role_and_priority(r)), axis=1)
                     suggested_df = suggested_df.sort_values(by=['Mức Ưu Tiên', 'MÃ_KEY'])
                     suggested_df['Chỉ dẫn lâm sàng (WHO)'] = suggested_df.apply(format_search_who_table, axis=1)
@@ -328,20 +305,17 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                     st.dataframe(display_related, use_container_width=True, hide_index=True)
 
 # =====================================================================
-# 5. PHÂN HỆ TỪ ĐIỂN TÌM KIẾM SẠCH (CLEAN SEARCH ENGINE)
+# TỪ ĐIỂN TÌM KIẾM SẠCH (VÙNG AN TOÀN TOÀN VIỆN)
 # =====================================================================
 elif st.session_state.current_view == "Từ điển Tìm kiếm":
     st.header("📖 Bộ Lọc Bệnh Lý Hợp Lệ (Vùng An Toàn)")
-    st.markdown("*Lưu ý: Bộ lọc này đã được cấu hình tự động ẩn toàn bộ các mã vĩ mô, mã tử vong, mã cấm làm bệnh chính và mã không khuyến khích. Chỉ hiển thị các chẩn đoán đạt chuẩn thanh toán 100%.*")
-    search_query = st.text_input("Gõ từ khóa bệnh lý (Gõ KHÔNG DẤU. VD: ruot thua, sinh de...):")
+    st.markdown("*Chỉ hiển thị các mã đạt chuẩn thanh toán BHYT 100%.*")
+    search_query = st.text_input("Gõ từ khóa bệnh lý (Gõ KHÔNG DẤU):")
     
     if search_query:
         query_normalized = remove_vietnamese_accents(search_query)
         result_df = df_master[df_master['TÊN_SEARCH_KEY'].str.contains(query_normalized, na=False)].copy()
-        
-        if result_df.empty:
-            st.warning("Không tìm thấy thuật ngữ phù hợp.")
-        else:
+        if not result_df.empty:
             valid_mask = result_df['MÃ KHÔNG ĐƯỢC SỬ DỤNG VÌ CÓ MÃ 4 HOẶC 5 KÝ TỰ CỤ THỂ HƠN'].isna()
             if 'CHỈ SỬ DỤNG MÃ HÓA NGUYÊN NHÂN TỬ VONG' in result_df.columns:
                 valid_mask &= result_df['CHỈ SỬ DỤNG MÃ HÓA NGUYÊN NHÂN TỬ VONG'].isna()
@@ -349,27 +323,25 @@ elif st.session_state.current_view == "Từ điển Tìm kiếm":
                 valid_mask &= result_df['MÃ KHÔNG ĐƯỢC DÙNG LÀ BỆNH CHÍNH'].isna()
             if 'MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH' in result_df.columns:
                 valid_mask &= result_df['MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH'].isna()
-            result_df = result_df[valid_mask]
+            result_df = result_df[valid_mask].copy()
 
             if result_df.empty:
-                st.warning("⚠️ Không có mã 'Hợp lệ toàn vẹn' nào khớp với từ khóa của bạn. Vui lòng gõ từ khóa chi tiết hơn.")
+                st.warning("⚠️ Không có mã nào đạt trạng thái hợp lệ toàn vẹn.")
             else:
-                st.success(f"🔍 Đã lọc thành công. Dưới đây là **{len(result_df)}** mã hoàn toàn hợp lệ để sử dụng làm bệnh án:")
                 def get_status(row):
                     flags = []
-                    if pd.notna(row.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NỮ GIỚI')): flags.append("♀️ Bệnh Nữ (Hợp lệ nếu đúng giới tính)")
-                    if pd.notna(row.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NAM GIỚI')): flags.append("♂️ Bệnh Nam (Hợp lệ nếu đúng giới tính)")
+                    if pd.notna(row.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NỮ GIỚI')): flags.append("♀️ Bệnh Nữ")
+                    if pd.notna(row.get('CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NAM GIỚI')): flags.append("♂️ Bệnh Nam")
                     return " + ".join(flags) if flags else "🟢 Hợp Lệ Toàn Vẹn"
-                    
                 result_df['TRẠNG THÁI KIỂM TOÁN'] = result_df.apply(get_status, axis=1)
                 result_df['Chỉ dẫn lâm sàng (WHO)'] = result_df.apply(format_search_who_table, axis=1)
                 st.dataframe(result_df[['MÃ BỆNH', 'TRẠNG THÁI KIỂM TOÁN', 'TÊN BỆNH', 'Chỉ dẫn lâm sàng (WHO)']], use_container_width=True, hide_index=True)
                 
                 col_sel, col_btn = st.columns([3, 1])
                 with col_sel:
-                    selected_code = st.selectbox("Chọn mã để xem luồng phân tích rủi ro chi tiết (Tính 1 lượt):", result_df['MÃ BỆNH'].tolist())
+                    selected_code = st.selectbox("Chọn mã để chuyển tiếp:", result_df['MÃ BỆNH'].tolist())
                 with col_btn:
-                    st.write("") 
+                    st.write("")
                     if st.button("Kiểm toán mã này", use_container_width=True, type="primary"):
                         navigate_to_audit(selected_code)
                         st.rerun()
