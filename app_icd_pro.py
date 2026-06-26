@@ -6,24 +6,35 @@ import re
 import unicodedata
 
 # =====================================================================
-# THIẾT LẬP MẬT KHẨU BẢN QUYỀN
+# THIẾT LẬP MẬT KHẨU BẢN QUYỀN TOÀN VIỆN
 # =====================================================================
 SECRET_PASSWORD = "admin" 
 
 st.set_page_config(page_title="Cổng Kiểm Toán ICD-10 Pro", page_icon="🏥", layout="wide")
 
 # =====================================================================
-# ĐÓN TÍN HIỆU TỪ INTERNET VÀ ÉP ĐỒNG BỘ TRẠNG THÁI Ô NHẬP LIỆU
+# 1. KHỞI TẠO BỘ NHỚ TRUNG TÂM (Phải đặt trước khi nhận tín hiệu)
 # =====================================================================
-url_params = st.query_params
-if "code" in url_params:
-    received_code = str(url_params["code"]).strip().upper()
-    if received_code:
-        st.session_state.active_code = received_code
-        st.session_state.audit_input = received_code  # ÉP Ô NHẬP LIỆU PHẢI NHẢY MÃ MỚI
-        st.session_state.current_view = "Kiểm toán BHYT"
-        del st.query_params["code"]  # Xóa tham số để sẵn sàng cho lượt bấm F9 tiếp theo
+if 'current_view' not in st.session_state: st.session_state.current_view = "Kiểm toán BHYT"
+if 'active_code' not in st.session_state: st.session_state.active_code = ""
+if 'audit_input' not in st.session_state: st.session_state.audit_input = ""
+if 'audited_codes' not in st.session_state: st.session_state.audited_codes = set()
+if 'is_unlocked' not in st.session_state: st.session_state.is_unlocked = False
 
+# =====================================================================
+# 2. BỘ THU NHẬN TÍN HIỆU INTERNET (ÉP ĐỒNG BỘ TRẠNG THÁI NGAY LẬP TỨC)
+# =====================================================================
+if "code" in st.query_params:
+    received_code = str(st.query_params["code"]).strip().upper()
+    if received_code:
+        st.session_state.audit_input = received_code  # Ép ô text nhảy chữ
+        st.session_state.active_code = received_code  # Ép hệ thống kiểm toán chạy
+        st.session_state.current_view = "Kiểm toán BHYT"
+        st.query_params.clear() # Xóa dấu vết URL để không bị kẹt ở lượt ấn F9 sau
+
+# =====================================================================
+# 3. CẤU HÌNH GIAO DIỆN & CSS
+# =====================================================================
 st.markdown("""
     <meta name="google" content="notranslate">
     <style>
@@ -44,12 +55,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-if 'current_view' not in st.session_state: st.session_state.current_view = "Kiểm toán BHYT"
-if 'active_code' not in st.session_state: st.session_state.active_code = ""
-if 'audited_codes' not in st.session_state: st.session_state.audited_codes = set()
-if 'is_unlocked' not in st.session_state: st.session_state.is_unlocked = False
-
 def navigate_to_audit(code):
+    st.session_state.audit_input = code
     st.session_state.active_code = code
     st.session_state.current_view = "Kiểm toán BHYT"
 
@@ -117,6 +124,7 @@ def format_search_who_table(row):
             parts.append(t)
     return " | ".join(parts)
 
+# TẢI DỮ LIỆU TỪ THƯ MỤC GỐC GITHUB
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 data_source = os.path.join(CURRENT_DIR, "icd.xlsx")
 
@@ -139,9 +147,8 @@ with st.sidebar:
 if st.session_state.current_view == "Kiểm toán BHYT":
     st.header("🔍 Thẩm định Pháp lý & Định hướng Bệnh án")
     
-    # Đọc giá trị đồng bộ tuyệt đối từ session_state
-    default_input = st.session_state.get('active_code', '')
-    raw_code = st.text_input("Nhập mã ICD-10 cần kiểm toán:", value=default_input, key="audit_input")
+    # 💥 Ô nhập liệu đọc trực tiếp từ bộ nhớ
+    raw_code = st.text_input("Nhập mã ICD-10 cần kiểm toán:", key="audit_input")
     search_code = re.sub(r'[^a-zA-Z0-9.]', '', raw_code).strip().upper()
     st.session_state.active_code = search_code 
     
@@ -202,7 +209,7 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                 parsed_who_text = parse_who_clinical_data(record)
                 st.markdown(f"""
                 <div class="who-guide">
-                    <h3 style="margin-top:0; color: #263238;">📚 CHỬ DẪN LÂM SÀNG & ĐỊNH VỊ PHÁP LÝ</h3>
+                    <h3 style="margin-top:0; color: #263238;">📚 CHỈ DẪN LÂM SÀNG & ĐỊNH VỊ PHÁP LÝ</h3>
                     <b style="color:#1565C0;">1. Phân loại theo Thông tư:</b> Chương {record.get('STT CHƯƠNG','')} | Khối {record.get('MÃ KHỐI','')} | Nhóm {record.get('MÃ NHÓM BỆNH 3 KÝ TỰ','')}<br>
                     <b style="color:#1565C0;">2. Chỉ dẫn WHO 2019:</b><br>
                     <div style="padding-left: 20px; border-left: 3px solid #90A4AE;">{parsed_who_text}</div>
