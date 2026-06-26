@@ -2,7 +2,7 @@ import ctypes
 import sys
 import os
 
-# 1. TỰ ĐỘNG BẬT QUYỀN ADMINISTRATOR ĐỂ TRÁNH BỊ WINDOWS CHẶN BẮT PHÍM
+# Tự động nâng cấp đặc quyền Administrator để Windows không chặn tín hiệu bắt phím
 def is_admin():
     try: return ctypes.windll.shell32.IsUserAnAdmin()
     except: return False
@@ -20,29 +20,26 @@ import pygetwindow as gw
 import pyautogui
 
 print("="*60)
-print("🚀 ROBOT F9 CLOUD INTERNET - BẢN KHÓA TIÊU ĐIỂM CHỐNG ĐƠ")
+print("🚀 ROBOT F9 CLOUD VẬN HÀNH TOÀN VIỆN - BẢN KHÓA CỨNG REFRESH")
 print("="*60)
-print("👉 Đang liên thông ngầm với phần mềm HIS Bệnh viện...")
 
 # =====================================================================
-# ⚠️ ANH HÃY THAY ĐƯỜNG LINK TRANG WEB STREAMLIT THỰC TẾ ĐANG CHẠY VÀO ĐÂY:
+# ⚠️ ĐIỀN CHÍNH XÁC ĐƯỜNG LINK TRANG WEB STREAMLIT CLOUD CỦA ANH VÀO ĐÂY:
 # =====================================================================
 CLOUD_URL = "https://kiem-toan-icd.streamlit.app" 
 
 last_run_time = 0
-cooldown_duration = 2.0 # Chốt chặn khóa phím 2 giây triệt tiêu lỗi lặp tab
+cooldown_duration = 2.0
 
 def force_focus_browser():
-    """Thuật toán định vị nâng cao: Quét tìm không gian tab chứa ứng dụng"""
     try:
         for win in gw.getAllWindows():
             title = win.title.lower()
-            # Quét tất cả các khả năng hiển thị tiêu đề trên các trình duyệt khác nhau
             if "kiểm toán" in title or "streamlit" in title or "icd-10" in title:
                 hwnd = win._hWnd
                 if ctypes.windll.user32.IsIconic(hwnd):
-                    ctypes.windll.user32.ShowWindow(hwnd, 9) # Khôi phục nếu tab bị thu nhỏ
-                pyautogui.press('alt') # Lách luật chặn cửa sổ nổi của Windows
+                    ctypes.windll.user32.ShowWindow(hwnd, 9) 
+                pyautogui.press('alt') 
                 ctypes.windll.user32.SetForegroundWindow(hwnd)
                 return True
     except Exception:
@@ -57,20 +54,17 @@ def on_f9_pressed():
     
     pyperclip.copy("") 
     keyboard.send('ctrl+c')
-    time.sleep(0.45) # Độ trễ đệm RAM tối ưu cho máy trạm bệnh viện nạp mã bệnh
+    time.sleep(0.45) # Chờ RAM máy trạm nạp mã bệnh vào bộ nhớ đệm
     
     raw_text = pyperclip.paste().strip().upper()
     copied_text = re.sub(r'[^A-Z0-9.]', '', raw_text)
     
-    if not copied_text or len(copied_text) > 10:
-        print("⚠️ Hủy lệnh: Chuỗi trống hoặc sai cấu trúc mã ICD-10.")
-        return
+    if not copied_text or len(copied_text) > 10: return
         
     full_url = f"{CLOUD_URL}/?code={copied_text}"
 
-    # Thực thi cơ chế dán đè URL trực tiếp lên thanh địa chỉ (Chống đẻ tab mới)
     if force_focus_browser():
-        time.sleep(0.25) # Chờ trình duyệt nổi hẳn lên bề mặt
+        time.sleep(0.25)
         pyautogui.hotkey('ctrl', 'l') 
         time.sleep(0.15)
         pyperclip.copy(full_url)
@@ -78,11 +72,14 @@ def on_f9_pressed():
         pyautogui.hotkey('ctrl', 'v')
         time.sleep(0.15)
         pyautogui.press('enter')
-        print(f"🚀 Liên thông trực tuyến mã bệnh thành công: {copied_text}")
+        
+        # 💥 ĐOẠN VÁ TỐI THƯỢNG: Ép trình duyệt F5 để nạp mã bệnh mới vào ô nhập liệu đám mây
+        time.sleep(0.25)
+        pyautogui.press('f5')
+        print(f"🔄 Đã ép nạp mã thành công trực tuyến: {copied_text}")
     else:
-        # Nếu chưa bật trang web, khởi tạo tab mới làm mục tiêu gốc
         webbrowser.open(full_url)
-        print("🌐 Đã khởi tạo điểm liên kết Đám mây mới!")
+        print("🌐 Khởi tạo điểm liên kết mới thành công!")
 
 keyboard.add_hotkey('f9', on_f9_pressed)
 keyboard.wait()
