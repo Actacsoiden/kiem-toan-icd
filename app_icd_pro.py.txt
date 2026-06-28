@@ -17,7 +17,7 @@ st.set_page_config(page_title="Cổng Kiểm Toán ICD-10 Pro", page_icon="🏥"
 # =====================================================================
 if 'current_view' not in st.session_state: st.session_state.current_view = "Kiểm toán BHYT"
 if 'active_code' not in st.session_state: st.session_state.active_code = ""
-if 'audit_input' not in st.session_state: st.session_state.audit_input = ""
+if 'audit_input' not in st.session_state: st.session_state.audit_input = "" 
 if 'audited_codes' not in st.session_state: st.session_state.audited_codes = set()
 if 'is_unlocked' not in st.session_state: st.session_state.is_unlocked = False
 
@@ -25,10 +25,9 @@ if 'is_unlocked' not in st.session_state: st.session_state.is_unlocked = False
 if "code" in st.query_params:
     received_code = str(st.query_params["code"]).strip().upper()
     if received_code:
-        st.session_state.audit_input = received_code
-        st.session_state.active_code = received_code
+        st.session_state.audit_input = received_code  # Ép chữ hiển thị lên ô text
+        st.session_state.active_code = received_code  # Kích hoạt động cơ tra cứu
         st.session_state.current_view = "Kiểm toán BHYT"
-        st.query_params.clear() # Giải phóng thanh địa chỉ để chờ lượt F9 tiếp theo
 
 # =====================================================================
 # 2. CẤU HÌNH GIAO DIỆN HIỂN THỊ (UI & CSS)
@@ -61,14 +60,14 @@ def navigate_to_audit(code):
 def remove_vietnamese_accents(s):
     if pd.isna(s) or not isinstance(s, str): return ""
     s = unicodedata.normalize('NFD', s)
-    # ĐÃ SỬA LỖI: Chuyển chính xác từ f thành s
+    # ĐÃ SỬA TRIỆT ĐỂ: Chuyển toàn bộ biến chạy vòng lặp về s chuẩn xác
     return ''.join(c for c in s if unicodedata.category(c) != 'Mn').replace('đ', 'd').replace('Đ', 'D').lower()
 
 def safe_get_str(row, col_name):
     if col_name in row and pd.notna(row[col_name]): return str(row[col_name]).strip()
     return ""
 
-@st.cache_data(show_spinner="⚙️ Đang đồng bộ cấu trúc dữ liệu Y khoa...")
+@st.cache_data(show_spinner="⚙️ Đang cấu trúc động cơ dữ liệu danh mục...")
 def init_enterprise_engine(file_source):
     try:
         df_raw = pd.read_excel(file_source, sheet_name="Bảng mã ICD10", header=2, engine='openpyxl', dtype=str)
@@ -85,7 +84,7 @@ def init_enterprise_engine(file_source):
         exact_map = df.set_index('MÃ_KEY', drop=False).to_dict(orient='index')
         return df, exact_map
     except Exception as e:
-        st.error(f"Lỗi khởi tạo dữ liệu tệp Excel: {e}")
+        st.error(f"Lỗi cấu trúc tệp dữ liệu danh mục: {e}")
         return None, None
 
 def get_code_role_and_priority(row):
@@ -148,9 +147,12 @@ with st.sidebar:
 if st.session_state.current_view == "Kiểm toán BHYT":
     st.header("🔍 Thẩm định Pháp lý & Định hướng Bệnh án")
     
+    # KHÓA CHẶT Ô TEXT VÀO BỘ NHỚ TRUNG TÂM QUA KEY TĨNH
     raw_code = st.text_input("Nhập mã ICD-10 cần kiểm toán:", key="audit_input")
+    
     search_code = re.sub(r'[^a-zA-Z0-9.]', '', raw_code).strip().upper()
-    st.session_state.active_code = search_code 
+    if search_code != st.session_state.active_code:
+        st.session_state.active_code = search_code 
     
     if search_code:
         record = exact_map.get(search_code)
@@ -198,7 +200,6 @@ if st.session_state.current_view == "Kiểm toán BHYT":
                     if safe_get_str(record, 'MÃ KHÔNG KHUYẾN KHÍCH DÙNG LÀ BỆNH CHÍNH'):
                         has_role_error = True; st.markdown("""<div class="alert-yellow"><h4 style="margin:0;">⚠️ CẢNH BÁO CỘT 25: KHÔNG KHUYẾN KHÍCH LÀM BỆNH CHÍNH</h4></div>""", unsafe_allow_html=True)
                     
-                    # ĐÃ SỬA LỖI: Cột hiển thị bảng chuẩn xác không dính ký tự lạ
                     if not has_role_error: st.markdown("""<div class="alert-green"><h4 style="margin:0;">🟢 QUYỀN HẠN CHẨN ĐOÁN: VỪA LÀM CHÍNH, VỪA LÀM PHỤ</h4></div>""", unsafe_allow_html=True)
                     if safe_get_str(record, 'CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NỮ GIỚI'): st.markdown("""<div class="alert-pink"><h4 style="margin:0;">♀️ ĐIỀU KIỆN GIỚI TÍNH: MÃ BỆNH LÝ CHỈ CÓ Ở NỮ GIỚI (Cột 28)</h4></div>""", unsafe_allow_html=True)
                     if safe_get_str(record, 'CÁC MÃ BỆNH CHỈ CÓ HOẶC CHỦ YẾU CÓ Ở NAM GIỚI'): st.markdown("""<div class="alert-blue"><h4 style="margin:0;">♂️ ĐIỀU KIỆN GIỚI TÍNH: MÃ BỆNH LÝ CHỈ CÓ Ở NAM GIỚI (Cột 29)</h4></div>""", unsafe_allow_html=True)
